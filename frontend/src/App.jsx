@@ -75,7 +75,7 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen w-screen bg-wa-bg-dark overflow-hidden select-none">
+    <div className="flex h-full h-[100dvh] w-full bg-wa-bg-dark overflow-hidden select-none">
       {/* Mobile-first Responsive Layout: Dual-pane on Desktop, Single-pane on Mobile */}
       <div
         className={`w-full h-full md:w-80 lg:w-96 flex-shrink-0 flex flex-col ${

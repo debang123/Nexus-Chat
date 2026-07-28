@@ -209,7 +209,11 @@ export default function ChatArea() {
       {/* Messages Scroll Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.map((msg) => {
-          const isSentByMe = msg.sender._id === user?._id || msg.sender === user?._id;
+          if (!msg) return null;
+
+          const senderId = typeof msg.sender === 'object' ? msg.sender?._id : msg.sender;
+          const isSentByMe = senderId === user?._id;
+          const senderName = typeof msg.sender === 'object' ? msg.sender?.name : 'Member';
           const reactions = msg.reactions || [];
 
           return (
@@ -227,7 +231,7 @@ export default function ChatArea() {
                 {/* Group Chat Sender Name */}
                 {activeChat.isGroupChat && !isSentByMe && (
                   <p className="text-xs font-semibold text-emerald-400 mb-1">
-                    {msg.sender.name || 'Member'}
+                    {senderName}
                   </p>
                 )}
 
