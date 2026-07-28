@@ -25,6 +25,7 @@ import EmojiPicker from 'emoji-picker-react';
 import { useAuthStore } from '../store/useAuthStore';
 import { useChatStore } from '../store/useChatStore';
 import { getSocket } from '../services/socket';
+import { getMediaUrl } from '../utils/url';
 import API from '../services/api';
 
 export default function ChatArea() {
@@ -250,23 +251,23 @@ export default function ChatArea() {
                   <div className="mb-2 rounded-lg overflow-hidden border border-slate-700/50">
                     {msg.media.type === 'image' && (
                       <img
-                        src={msg.media.url}
+                        src={getMediaUrl(msg.media.url)}
                         alt="attachment"
                         className="max-h-64 w-full object-cover"
                       />
                     )}
                     {msg.media.type === 'video' && (
-                      <video src={msg.media.url} controls className="max-h-64 w-full rounded-lg" />
+                      <video src={getMediaUrl(msg.media.url)} controls className="max-h-64 w-full rounded-lg" />
                     )}
                     {msg.media.type === 'audio' && (
                       <div className="flex items-center gap-3 p-3 bg-slate-800/80">
                         <Volume2 className="w-6 h-6 text-emerald-400" />
-                        <audio src={msg.media.url} controls className="w-full h-8" />
+                        <audio src={getMediaUrl(msg.media.url)} controls className="w-full h-8" />
                       </div>
                     )}
                     {msg.media.type === 'document' && (
                       <a
-                        href={msg.media.url}
+                        href={getMediaUrl(msg.media.url)}
                         target="_blank"
                         rel="noreferrer"
                         className="flex items-center gap-3 p-3 bg-slate-800/80 hover:bg-slate-800 transition"
