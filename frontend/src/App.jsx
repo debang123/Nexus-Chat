@@ -78,14 +78,14 @@ export default function App() {
     <div className="flex h-screen w-screen bg-wa-bg-dark overflow-hidden select-none">
       {/* Mobile-first Responsive Layout: Dual-pane on Desktop, Single-pane on Mobile */}
       <div
-        className={`w-full md:w-80 lg:w-96 flex-shrink-0 flex-col h-full ${
+        className={`w-full h-full md:w-80 lg:w-96 flex-shrink-0 flex flex-col ${
           activeChat ? 'hidden md:flex' : 'flex'
         }`}
       >
         <Sidebar onOpenNewGroup={() => setShowNewGroup(true)} />
       </div>
 
-      <div className={`flex-1 flex-col h-full ${!activeChat ? 'hidden md:flex' : 'flex'}`}>
+      <div className={`w-full h-full flex-1 flex flex-col ${!activeChat ? 'hidden md:flex' : 'flex'}`}>
         <ChatArea />
       </div>
 

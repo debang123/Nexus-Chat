@@ -93,7 +93,7 @@ export default function Sidebar({ onOpenNewGroup }) {
   });
 
   return (
-    <aside className="w-full md:w-96 flex flex-col bg-wa-panel-dark border-r border-wa-border-dark h-full select-none">
+    <aside className="w-full h-full flex flex-col bg-wa-panel-dark border-r border-wa-border-dark select-none">
       {/* Top Header */}
       <div className="h-16 bg-wa-header-dark px-4 flex items-center justify-between border-b border-wa-border-dark">
         <div

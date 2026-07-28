@@ -133,7 +133,7 @@ export default function ChatArea() {
 
   if (!activeChat) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center bg-wa-bg-dark text-slate-400 p-8 select-none">
+      <div className="w-full h-full flex flex-col items-center justify-center bg-wa-bg-dark text-slate-400 p-8 select-none">
         <div className="w-24 h-24 rounded-full bg-wa-header-dark flex items-center justify-center mb-4 border border-emerald-500/20 shadow-lg shadow-emerald-500/5">
           <Send className="w-12 h-12 text-emerald-400" />
         </div>
@@ -146,7 +146,7 @@ export default function ChatArea() {
   }
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-wa-bg-dark chat-pattern-dark relative select-none">
+    <div className="w-full h-full flex flex-col bg-wa-bg-dark chat-pattern-dark relative select-none">
       {/* Active Chat Header */}
       <div className="h-16 bg-wa-header-dark px-4 flex items-center justify-between border-b border-wa-border-dark z-10 shadow-sm">
         <div className="flex items-center gap-2 md:gap-3">
