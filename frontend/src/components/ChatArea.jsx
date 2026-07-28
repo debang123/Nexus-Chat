@@ -19,6 +19,7 @@ import {
   Play,
   Pause,
   Volume2,
+  ArrowLeft,
 } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
 import { useAuthStore } from '../store/useAuthStore';
@@ -30,6 +31,7 @@ export default function ChatArea() {
   const { user } = useAuthStore();
   const {
     activeChat,
+    selectChat,
     messages,
     sendMessage,
     onlineUsers,
@@ -147,7 +149,14 @@ export default function ChatArea() {
     <div className="flex-1 flex flex-col h-full bg-wa-bg-dark chat-pattern-dark relative select-none">
       {/* Active Chat Header */}
       <div className="h-16 bg-wa-header-dark px-4 flex items-center justify-between border-b border-wa-border-dark z-10 shadow-sm">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 md:gap-3">
+          <button
+            onClick={() => selectChat(null)}
+            className="md:hidden p-1.5 rounded-full hover:bg-wa-hover-dark text-slate-300 transition"
+            title="Back to chat list"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
           <div className="relative">
             <img src={chatAvatar} alt={chatName} className="w-10 h-10 rounded-full object-cover border border-slate-700" />
             {isOnline && (

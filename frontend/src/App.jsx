@@ -14,6 +14,7 @@ import { initSocket, getSocket } from './services/socket';
 export default function App() {
   const { token, isAuthenticated } = useAuthStore();
   const {
+    activeChat,
     activeTab,
     setActiveTab,
     addMessage,
@@ -75,9 +76,18 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-screen bg-wa-bg-dark overflow-hidden select-none">
-      {/* Main 2-Pane Web Interface */}
-      <Sidebar onOpenNewGroup={() => setShowNewGroup(true)} />
-      <ChatArea />
+      {/* Mobile-first Responsive Layout: Dual-pane on Desktop, Single-pane on Mobile */}
+      <div
+        className={`w-full md:w-80 lg:w-96 flex-shrink-0 flex-col h-full ${
+          activeChat ? 'hidden md:flex' : 'flex'
+        }`}
+      >
+        <Sidebar onOpenNewGroup={() => setShowNewGroup(true)} />
+      </div>
+
+      <div className={`flex-1 flex-col h-full ${!activeChat ? 'hidden md:flex' : 'flex'}`}>
+        <ChatArea />
+      </div>
 
       {/* Modals & Overlays */}
       {activeTab === 'status' && <StatusViewer onClose={() => setActiveTab('chats')} />}
