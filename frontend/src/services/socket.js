@@ -7,9 +7,11 @@ export const initSocket = (token) => {
     socket.disconnect();
   }
 
-  const SOCKET_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-    ? 'http://localhost:8000'
-    : window.location.origin;
+  const SOCKET_URL = import.meta.env.VITE_BACKEND_URL || (
+    window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+      ? 'http://localhost:8000'
+      : window.location.origin
+  );
 
   socket = io(SOCKET_URL, {
     auth: { token },
