@@ -2,7 +2,8 @@ const User = require('../models/User');
 const Message = require('../models/Message');
 const { verifyAccessToken } = require('../utils/generateToken');
 
-const onlineUsersMap = new Map(); // userId -> socketId
+// Map of userId -> Set of active socketIds (multi-device / multi-tab support)
+const onlineUsersMap = new Map();
 
 const registerSocketHandlers = (io) => {
   // Authentication middleware for socket connections
@@ -20,134 +21,217 @@ const registerSocketHandlers = (io) => {
       socket.user = user;
       next();
     } catch (err) {
-      next(new Error('Authentication error: Invalid token'));
+      next(new Error('Authentication error: Invalid or expired token'));
     }
   });
 
   io.on('connection', async (socket) => {
-    const userId = socket.user._id.toString();
-    onlineUsersMap.set(userId, socket.id);
-    console.log(`[Socket] User connected: ${socket.user.name} (${userId}) - Socket: ${socket.id}`);
+    try {
+      if (!socket.user || !socket.user._id) return;
 
-    // Update user online status
-    await User.findByIdAndUpdate(userId, { isOnline: true });
-    socket.broadcast.emit('presence:update', { userId, isOnline: true });
+      const userId = socket.user._id.toString();
 
-    // Send current online user list to connected client
-    socket.emit('presence:online_users', Array.from(onlineUsersMap.keys()));
+      // Multi-device socket tracking
+      if (!onlineUsersMap.has(userId)) {
+        onlineUsersMap.set(userId, new Set());
+      }
+      onlineUsersMap.get(userId).add(socket.id);
 
-    // Join personal user room for direct notifications
-    socket.join(userId);
+      console.log(`[Socket] Connected: ${socket.user.name} (${userId}) - Socket: ${socket.id}`);
 
-    // Setup room
-    socket.on('setup', (userData) => {
-      socket.join(userData._id);
-      socket.emit('connected');
-    });
+      // Update user online status
+      await User.findByIdAndUpdate(userId, { isOnline: true });
+      socket.broadcast.emit('presence:update', { userId, isOnline: true });
 
-    // Join chat room
-    socket.on('join:chat', (chatId) => {
-      socket.join(chatId);
-      console.log(`[Socket] User ${socket.user.name} joined chat room: ${chatId}`);
-    });
+      // Send current online user IDs list to connected client
+      socket.emit('presence:online_users', Array.from(onlineUsersMap.keys()));
 
-    // Leave chat room
-    socket.on('leave:chat', (chatId) => {
-      socket.leave(chatId);
-    });
+      // Join personal user room for multi-device broadcast
+      socket.join(userId);
 
-    // Typing indicators
-    socket.on('typing:start', ({ chatId }) => {
-      socket.in(chatId).emit('typing:start', { chatId, userId: socket.user._id, name: socket.user.name });
-    });
-
-    socket.on('typing:stop', ({ chatId }) => {
-      socket.in(chatId).emit('typing:stop', { chatId, userId: socket.user._id });
-    });
-
-    // New Message event
-    socket.on('message:send', (newMessageReceived) => {
-      const chat = newMessageReceived.chat;
-      if (!chat || !chat.users) return;
-
-      chat.users.forEach((user) => {
-        const recipientId = user._id || user;
-        if (recipientId.toString() === socket.user._id.toString()) return;
-
-        // Emit to recipient's personal room or chat room
-        socket.in(recipientId.toString()).emit('message:received', newMessageReceived);
+      // Setup room
+      socket.on('setup', (userData) => {
+        try {
+          if (userData?._id) {
+            socket.join(userData._id);
+            socket.emit('connected');
+          }
+        } catch (e) {
+          console.error('[Socket] Setup error:', e.message);
+        }
       });
-    });
 
-    // Message Read Receipts (Blue ticks)
-    socket.on('message:read', async ({ messageId, chatId, senderId }) => {
-      try {
-        await Message.findByIdAndUpdate(messageId, {
-          $addToSet: { readBy: socket.user._id },
-        });
+      // Join chat room
+      socket.on('join:chat', (chatId) => {
+        try {
+          if (chatId) {
+            socket.join(chatId);
+          }
+        } catch (e) {
+          console.error('[Socket] Join chat error:', e.message);
+        }
+      });
 
-        io.in(chatId).emit('message:read_update', {
-          messageId,
-          chatId,
-          readByUserId: socket.user._id,
-        });
-      } catch (err) {
-        console.error('[Socket] Error updating read receipt:', err.message);
-      }
-    });
+      // Leave chat room
+      socket.on('leave:chat', (chatId) => {
+        try {
+          if (chatId) socket.leave(chatId);
+        } catch (e) {}
+      });
 
-    // WebRTC Calling Signaling
-    socket.on('call:initiate', ({ toUserId, chatId, offer, callType, callerInfo }) => {
-      const recipientSocketId = onlineUsersMap.get(toUserId);
-      if (recipientSocketId) {
-        io.to(recipientSocketId).emit('call:incoming', {
-          fromUserId: userId,
-          chatId,
-          offer,
-          callType, // 'audio' | 'video'
-          callerInfo: callerInfo || { _id: userId, name: socket.user.name, avatar: socket.user.avatar },
-        });
-      } else {
-        socket.emit('call:user_offline', { toUserId });
-      }
-    });
+      // Typing indicators
+      socket.on('typing:start', (data) => {
+        try {
+          if (data?.chatId && socket.user) {
+            socket.in(data.chatId).emit('typing:start', {
+              chatId: data.chatId,
+              userId: socket.user._id,
+              name: socket.user.name,
+            });
+          }
+        } catch (e) {
+          console.error('[Socket] Typing start error:', e.message);
+        }
+      });
 
-    socket.on('call:accept', ({ toUserId, answer }) => {
-      const callerSocketId = onlineUsersMap.get(toUserId);
-      if (callerSocketId) {
-        io.to(callerSocketId).emit('call:accepted', { answer, fromUserId: userId });
-      }
-    });
+      socket.on('typing:stop', (data) => {
+        try {
+          if (data?.chatId && socket.user) {
+            socket.in(data.chatId).emit('typing:stop', {
+              chatId: data.chatId,
+              userId: socket.user._id,
+            });
+          }
+        } catch (e) {}
+      });
 
-    socket.on('call:reject', ({ toUserId }) => {
-      const callerSocketId = onlineUsersMap.get(toUserId);
-      if (callerSocketId) {
-        io.to(callerSocketId).emit('call:rejected', { fromUserId: userId });
-      }
-    });
+      // New Message event
+      socket.on('message:send', (newMessageReceived) => {
+        try {
+          if (!newMessageReceived || !newMessageReceived.chat) return;
 
-    socket.on('call:end', ({ toUserId }) => {
-      const peerSocketId = onlineUsersMap.get(toUserId);
-      if (peerSocketId) {
-        io.to(peerSocketId).emit('call:ended', { fromUserId: userId });
-      }
-    });
+          const chat = newMessageReceived.chat;
+          if (!chat.users || !Array.isArray(chat.users)) return;
 
-    socket.on('call:ice_candidate', ({ toUserId, candidate }) => {
-      const peerSocketId = onlineUsersMap.get(toUserId);
-      if (peerSocketId) {
-        io.to(peerSocketId).emit('call:ice_candidate', { candidate, fromUserId: userId });
-      }
-    });
+          chat.users.forEach((u) => {
+            const recipientId = (u._id || u).toString();
+            if (socket.user && recipientId === socket.user._id.toString()) return;
 
-    // Disconnect event
-    socket.on('disconnect', async () => {
-      console.log(`[Socket] User disconnected: ${socket.user.name} (${userId})`);
-      onlineUsersMap.delete(userId);
-      const lastSeen = new Date();
-      await User.findByIdAndUpdate(userId, { isOnline: false, lastSeen });
-      socket.broadcast.emit('presence:update', { userId, isOnline: false, lastSeen });
-    });
+            // Emit to recipient's personal room or chat room
+            io.to(recipientId).emit('message:received', newMessageReceived);
+          });
+        } catch (e) {
+          console.error('[Socket] Message send error:', e.message);
+        }
+      });
+
+      // Message Read Receipts
+      socket.on('message:read', async (data) => {
+        try {
+          if (!data || !data.messageId || !socket.user) return;
+
+          await Message.findByIdAndUpdate(data.messageId, {
+            $addToSet: { readBy: socket.user._id },
+          });
+
+          if (data.chatId) {
+            io.in(data.chatId).emit('message:read_update', {
+              messageId: data.messageId,
+              chatId: data.chatId,
+              readByUserId: socket.user._id,
+            });
+          }
+        } catch (err) {
+          console.error('[Socket] Error updating read receipt:', err.message);
+        }
+      });
+
+      // WebRTC Calling Signaling
+      socket.on('call:initiate', (data) => {
+        try {
+          if (!data || !data.toUserId) return;
+          const userSockets = onlineUsersMap.get(data.toUserId);
+
+          if (userSockets && userSockets.size > 0) {
+            io.to(data.toUserId).emit('call:incoming', {
+              fromUserId: userId,
+              chatId: data.chatId,
+              offer: data.offer,
+              callType: data.callType || 'video',
+              callerInfo: data.callerInfo || {
+                _id: userId,
+                name: socket.user.name,
+                avatar: socket.user.avatar,
+              },
+            });
+          } else {
+            socket.emit('call:user_offline', { toUserId: data.toUserId });
+          }
+        } catch (e) {
+          console.error('[Socket] Call initiate error:', e.message);
+        }
+      });
+
+      socket.on('call:accept', (data) => {
+        try {
+          if (data?.toUserId) {
+            io.to(data.toUserId).emit('call:accepted', {
+              answer: data.answer,
+              fromUserId: userId,
+            });
+          }
+        } catch (e) {}
+      });
+
+      socket.on('call:reject', (data) => {
+        try {
+          if (data?.toUserId) {
+            io.to(data.toUserId).emit('call:rejected', { fromUserId: userId });
+          }
+        } catch (e) {}
+      });
+
+      socket.on('call:end', (data) => {
+        try {
+          if (data?.toUserId) {
+            io.to(data.toUserId).emit('call:ended', { fromUserId: userId });
+          }
+        } catch (e) {}
+      });
+
+      socket.on('call:ice_candidate', (data) => {
+        try {
+          if (data?.toUserId) {
+            io.to(data.toUserId).emit('call:ice_candidate', {
+              candidate: data.candidate,
+              fromUserId: userId,
+            });
+          }
+        } catch (e) {}
+      });
+
+      // Disconnect event
+      socket.on('disconnect', async () => {
+        try {
+          console.log(`[Socket] Disconnected: ${socket.user.name} (${userId})`);
+
+          const userSockets = onlineUsersMap.get(userId);
+          if (userSockets) {
+            userSockets.delete(socket.id);
+            if (userSockets.size === 0) {
+              onlineUsersMap.delete(userId);
+              const lastSeen = new Date();
+              await User.findByIdAndUpdate(userId, { isOnline: false, lastSeen });
+              socket.broadcast.emit('presence:update', { userId, isOnline: false, lastSeen });
+            }
+          }
+        } catch (e) {
+          console.error('[Socket] Disconnect error:', e.message);
+        }
+      });
+    } catch (err) {
+      console.error('[Socket] Connection handler error:', err.message);
+    }
   });
 };
 
