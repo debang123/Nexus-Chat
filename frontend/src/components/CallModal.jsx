@@ -3,6 +3,13 @@ import { Phone, PhoneOff, Mic, MicOff, Video, VideoOff, Volume2 } from 'lucide-r
 import { useChatStore } from '../store/useChatStore';
 import { getSocket } from '../services/socket';
 
+const ICE_SERVERS = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+  ],
+};
+
 export default function CallModal() {
   const { callState, endCall } = useChatStore();
   const [isMuted, setIsMuted] = useState(false);
@@ -12,11 +19,13 @@ export default function CallModal() {
 
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
+  const remoteAudioRef = useRef(null);
+  const peerConnectionRef = useRef(null);
   const localStreamRef = useRef(null);
 
   useEffect(() => {
     if (!callState.active) {
-      cleanupMediaStreams();
+      cleanupCall();
       setIsAccepted(false);
       return;
     }
@@ -25,43 +34,163 @@ export default function CallModal() {
       setCallStatus('Incoming Call...');
     } else {
       setCallStatus('Ringing...');
-      startLocalMediaStream();
+      initiateCallerWebRTC();
     }
 
     const socket = getSocket();
     if (!socket) return;
 
-    const handleCallAccepted = async () => {
+    const handleCallAccepted = async ({ answer }) => {
       setCallStatus('Call Connected');
       setIsAccepted(true);
+      try {
+        if (peerConnectionRef.current && answer) {
+          await peerConnectionRef.current.setRemoteDescription(
+            new RTCSessionDescription(answer)
+          );
+        }
+      } catch (err) {
+        console.error('[WebRTC] Error setting remote answer:', err);
+      }
+    };
+
+    const handleIceCandidate = async ({ candidate }) => {
+      try {
+        if (peerConnectionRef.current && candidate) {
+          await peerConnectionRef.current.addIceCandidate(
+            new RTCIceCandidate(candidate)
+          );
+        }
+      } catch (err) {
+        console.error('[WebRTC] Error adding ICE candidate:', err);
+      }
     };
 
     const handleCallRejected = () => {
       setCallStatus('Call Rejected');
-      setTimeout(() => endCall(), 1500);
+      setTimeout(() => cleanupCall(), 1200);
     };
 
     const handleCallEnded = () => {
       setCallStatus('Call Ended');
-      setTimeout(() => endCall(), 1000);
+      setTimeout(() => cleanupCall(), 1000);
     };
 
     socket.on('call:accepted', handleCallAccepted);
+    socket.on('call:ice_candidate', handleIceCandidate);
     socket.on('call:rejected', handleCallRejected);
     socket.on('call:ended', handleCallEnded);
 
     return () => {
       socket.off('call:accepted', handleCallAccepted);
+      socket.off('call:ice_candidate', handleIceCandidate);
       socket.off('call:rejected', handleCallRejected);
       socket.off('call:ended', handleCallEnded);
     };
   }, [callState.active, callState.incoming]);
 
-  const startLocalMediaStream = async () => {
+  // Caller initiates call and creates SDP Offer
+  const initiateCallerWebRTC = async () => {
+    try {
+      const stream = await acquireMediaStream();
+      if (!stream) return;
+
+      const pc = createPeerConnection();
+      peerConnectionRef.current = pc;
+
+      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      const socket = getSocket();
+      if (socket && callState.peerUser) {
+        socket.emit('call:initiate', {
+          toUserId: callState.peerUser._id,
+          chatId: callState.chatId,
+          offer,
+          callType: callState.callType,
+        });
+      }
+    } catch (err) {
+      console.error('[WebRTC] Error initiating call:', err);
+      setCallStatus('Failed to start call media');
+    }
+  };
+
+  // Recipient accepts incoming call and creates SDP Answer
+  const handleAcceptCall = async () => {
+    setIsAccepted(true);
+    setCallStatus('Connecting Media...');
+
+    try {
+      const stream = await acquireMediaStream();
+      const pc = createPeerConnection();
+      peerConnectionRef.current = pc;
+
+      if (stream) {
+        stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+      }
+
+      if (callState.offer) {
+        await pc.setRemoteDescription(new RTCSessionDescription(callState.offer));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+
+        const socket = getSocket();
+        if (socket && callState.peerUser) {
+          socket.emit('call:accept', {
+            toUserId: callState.peerUser._id,
+            answer,
+          });
+        }
+      }
+      setCallStatus('Call Connected');
+    } catch (err) {
+      console.error('[WebRTC] Error accepting call:', err);
+      setCallStatus('Media Connection Error');
+    }
+  };
+
+  // Create RTCPeerConnection with STUN configuration & track handlers
+  const createPeerConnection = () => {
+    const pc = new RTCPeerConnection(ICE_SERVERS);
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        const socket = getSocket();
+        if (socket && callState.peerUser) {
+          socket.emit('call:ice_candidate', {
+            toUserId: callState.peerUser._id,
+            candidate: event.candidate,
+          });
+        }
+      }
+    };
+
+    pc.ontrack = (event) => {
+      console.log('[WebRTC] Received Remote Stream Track:', event.streams[0]);
+      if (event.streams && event.streams[0]) {
+        const remoteStream = event.streams[0];
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = remoteStream;
+          remoteVideoRef.current.play().catch(() => {});
+        }
+        if (remoteAudioRef.current) {
+          remoteAudioRef.current.srcObject = remoteStream;
+          remoteAudioRef.current.play().catch(() => {});
+        }
+      }
+    };
+
+    return pc;
+  };
+
+  const acquireMediaStream = async () => {
     try {
       const constraints = {
         audio: true,
-        video: callState.callType === 'video',
+        video: callState.callType === 'video' ? { width: 1280, height: 720 } : false,
       };
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       localStreamRef.current = stream;
@@ -69,47 +198,39 @@ export default function CallModal() {
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
       }
+      return stream;
     } catch (err) {
-      console.warn('[WebRTC] Camera/Microphone access error:', err.message);
-      setCallStatus('Camera/Mic permission required');
-    }
-  };
-
-  const handleAcceptCall = async () => {
-    setIsAccepted(true);
-    setCallStatus('Connecting Media...');
-    await startLocalMediaStream();
-
-    const socket = getSocket();
-    if (socket && callState.peerUser) {
-      socket.emit('call:accept', {
-        toUserId: callState.peerUser._id,
-      });
+      console.warn('[WebRTC] Camera/Mic access warning:', err.message);
+      setCallStatus('Mic/Camera Permission Required');
+      return null;
     }
   };
 
   const handleRejectCall = () => {
     const socket = getSocket();
     if (socket && callState.peerUser) {
-      socket.emit('call:reject', {
-        toUserId: callState.peerUser._id,
-      });
+      socket.emit('call:reject', { toUserId: callState.peerUser._id });
     }
-    endCall();
+    cleanupCall();
   };
 
-  const cleanupMediaStreams = () => {
+  const cleanupCall = () => {
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((track) => track.stop());
       localStreamRef.current = null;
     }
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
+    }
+    endCall();
   };
 
   const toggleMute = () => {
     if (localStreamRef.current) {
       const audioTrack = localStreamRef.current.getAudioTracks()[0];
       if (audioTrack) {
-        audioTrack.enabled = isMuted; // Toggle enabled state
+        audioTrack.enabled = isMuted;
       }
     }
     setIsMuted(!isMuted);
@@ -119,7 +240,7 @@ export default function CallModal() {
     if (localStreamRef.current) {
       const videoTrack = localStreamRef.current.getVideoTracks()[0];
       if (videoTrack) {
-        videoTrack.enabled = isVideoOff; // Toggle enabled state
+        videoTrack.enabled = isVideoOff;
       }
     }
     setIsVideoOff(!isVideoOff);
@@ -129,6 +250,9 @@ export default function CallModal() {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/95 flex flex-col items-center justify-between p-6 backdrop-blur-2xl select-none">
+      {/* Hidden audio element for remote audio stream playback */}
+      <audio ref={remoteAudioRef} autoPlay playsInline />
+
       {/* Header */}
       <div className="w-full flex items-center justify-between max-w-4xl text-slate-300">
         <div className="flex items-center gap-3">
@@ -151,27 +275,16 @@ export default function CallModal() {
       <div className="flex-1 w-full max-w-4xl my-4 relative bg-slate-900 rounded-3xl overflow-hidden border border-slate-800 flex items-center justify-center shadow-2xl">
         {callState.callType === 'video' ? (
           <div className="w-full h-full relative bg-slate-950 flex items-center justify-center">
-            {/* Remote Video Stream / Placeholder */}
+            {/* Remote Video Element */}
             <video
               ref={remoteVideoRef}
               autoPlay
               playsInline
               className="w-full h-full object-cover"
             />
-            {(!isAccepted || isVideoOff) && (
-              <div className="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center p-6 text-center">
-                <img
-                  src={callState.peerUser?.avatar}
-                  alt={callState.peerUser?.name}
-                  className="w-28 h-28 rounded-full object-cover mb-4 border-4 border-emerald-500 shadow-2xl animate-pulse"
-                />
-                <h4 className="text-xl font-bold text-slate-100">{callState.peerUser?.name}</h4>
-                <p className="text-xs text-slate-400 mt-1">{callStatus}</p>
-              </div>
-            )}
 
             {/* Local Video Thumbnail Box */}
-            <div className="absolute bottom-4 right-4 w-36 h-28 bg-slate-900 rounded-2xl overflow-hidden border-2 border-slate-700 shadow-2xl">
+            <div className="absolute bottom-4 right-4 w-36 h-28 bg-slate-900 rounded-2xl overflow-hidden border-2 border-slate-700 shadow-2xl z-10">
               <video
                 ref={localVideoRef}
                 autoPlay
@@ -197,7 +310,7 @@ export default function CallModal() {
       </div>
 
       {/* Controls Bar */}
-      <div className="flex items-center gap-6 bg-slate-900/90 px-8 py-4 rounded-full border border-slate-800 shadow-2xl">
+      <div className="flex items-center gap-6 bg-slate-900/90 px-8 py-4 rounded-full border border-slate-800 shadow-2xl z-20">
         {callState.incoming && !isAccepted ? (
           <>
             <button
