@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Cache & Local Storage
+.cache/
+**/.cache/
+backend/src/uploads/*
+!backend/src/uploads/.gitkeep
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+*.env
+
+# Build outputs
+dist/
+build/
+*.log
+
+# System files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-wa-bg-dark text-slate-100 font-sans antialiased overflow-hidden;
+  }
+}
+
+/* WhatsApp Chat Background Wallpaper Pattern */
+.chat-pattern-dark {
+  background-color: #0b141a;
+  background-image: radial-gradient(#1f2c34 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.chat-pattern-light {
+  background-color: #efeae2;
+  background-image: radial-gradient(#d5ccc1 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* Custom Sleek Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Smooth glassmorphism */
+.glass-panel {
+  background: rgba(17, 27, 33, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
