@@ -108,18 +108,24 @@ const registerSocketHandlers = (io) => {
       // New Message event
       socket.on('message:send', (newMessageReceived) => {
         try {
-          if (!newMessageReceived || !newMessageReceived.chat) return;
+          if (!newMessageReceived) return;
 
           const chat = newMessageReceived.chat;
-          if (!chat.users || !Array.isArray(chat.users)) return;
+          const chatId = typeof chat === 'object' ? chat?._id?.toString() : chat?.toString();
 
-          chat.users.forEach((u) => {
-            const recipientId = (u._id || u).toString();
-            if (socket.user && recipientId === socket.user._id.toString()) return;
+          // Broadcast to active chat room
+          if (chatId) {
+            socket.in(chatId).emit('message:received', newMessageReceived);
+          }
 
-            // Emit to recipient's personal room or chat room
-            io.to(recipientId).emit('message:received', newMessageReceived);
-          });
+          // Also emit to recipient personal user rooms (for real-time sidebar updates)
+          if (chat && Array.isArray(chat.users)) {
+            chat.users.forEach((u) => {
+              const recipientId = (u._id || u).toString();
+              if (socket.user && recipientId === socket.user._id.toString()) return;
+              io.to(recipientId).emit('message:received', newMessageReceived);
+            });
+          }
         } catch (e) {
           console.error('[Socket] Message send error:', e.message);
         }

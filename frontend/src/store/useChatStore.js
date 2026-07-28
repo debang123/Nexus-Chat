@@ -53,20 +53,30 @@ export const useChatStore = create((set, get) => ({
   },
 
   addMessage: (newMsg) => {
+    if (!newMsg) return;
     const { activeChat, messages, chats } = get();
+    const msgChatId = typeof newMsg.chat === 'object' ? newMsg.chat?._id?.toString() : newMsg.chat?.toString();
+
     // If message is for currently active chat
-    if (activeChat && activeChat._id === newMsg.chat._id) {
-      set({ messages: [...messages, newMsg] });
+    if (activeChat && activeChat._id?.toString() === msgChatId) {
+      if (!messages.some((m) => m._id === newMsg._id)) {
+        set({ messages: [...messages, newMsg] });
+      }
     }
 
-    // Update latest message in chat list
-    const updatedChats = chats.map((c) => {
-      if (c._id === newMsg.chat._id) {
-        return { ...c, latestMessage: newMsg, updatedAt: new Date().toISOString() };
-      }
-      return c;
-    });
-    set({ chats: updatedChats });
+    // Update latest message in chat list or fetch chats if chat is new
+    const chatExists = chats.some((c) => c._id?.toString() === msgChatId);
+    if (chatExists) {
+      const updatedChats = chats.map((c) => {
+        if (c._id?.toString() === msgChatId) {
+          return { ...c, latestMessage: newMsg, updatedAt: new Date().toISOString() };
+        }
+        return c;
+      });
+      set({ chats: updatedChats });
+    } else {
+      get().fetchChats();
+    }
   },
 
   sendMessage: async (chatId, content, file = null, replyTo = null) => {
