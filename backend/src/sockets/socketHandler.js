@@ -39,12 +39,11 @@ const registerSocketHandlers = (io) => {
 
       console.log(`[Socket] Connected: ${socket.user.name} (${userId}) - Socket: ${socket.id}`);
 
-      // Update user online status
+      // Update user online status in database
       await User.findByIdAndUpdate(userId, { isOnline: true });
-      socket.broadcast.emit('presence:update', { userId, isOnline: true });
 
-      // Send current online user IDs list to connected client
-      socket.emit('presence:online_users', Array.from(onlineUsersMap.keys()));
+      // Broadcast updated online users list to ALL connected clients
+      io.emit('presence:online_users', Array.from(onlineUsersMap.keys()));
 
       // Join personal user room for multi-device broadcast
       socket.join(userId);
@@ -228,7 +227,7 @@ const registerSocketHandlers = (io) => {
               onlineUsersMap.delete(userId);
               const lastSeen = new Date();
               await User.findByIdAndUpdate(userId, { isOnline: false, lastSeen });
-              socket.broadcast.emit('presence:update', { userId, isOnline: false, lastSeen });
+              io.emit('presence:online_users', Array.from(onlineUsersMap.keys()));
             }
           }
         } catch (e) {
